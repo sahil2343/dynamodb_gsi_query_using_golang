@@ -1,11 +1,15 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 )
 
 type Item struct {
@@ -13,9 +17,10 @@ type Item struct {
 	Email     string
 	FirstName string
 	LastName  string
+	Phone     string
 }
 
-func main() {
+func queryHandler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	// STarting dynamoDB session
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
@@ -26,22 +31,43 @@ func main() {
 
 	// Here TableName is people, partiton key is PersonSSN and index is User_mail
 	tableName := "people"
-	PersonSSN := "11111111"
-	// User_mail := "abcd@gmail.com"
-	var resp, err = svc.GetItem(&dynamodb.GetItemInput{
+	// PersonSSN := "11111111"
+	phone_no := "12347"
+	index_name := "Phone-index"
+
+	//query using GSI(indexing)
+	var queryInput, err2 = svc.Query(&dynamodb.QueryInput{
 		TableName: aws.String(tableName),
-		Key: map[string]*dynamodb.AttributeValue{
-			"PersonSSN": {
-				S: aws.String(PersonSSN),
+		IndexName: aws.String(index_name),
+		KeyConditions: map[string]*dynamodb.Condition{
+			"Phone": {
+				ComparisonOperator: aws.String("EQ"),
+				AttributeValueList: []*dynamodb.AttributeValue{
+					{
+						S: aws.String(phone_no),
+					},
+				},
 			},
 		},
 	})
-	if err != nil {
-		fmt.Println(err)
+
+	if err2 != nil {
+		fmt.Println(err2)
 	}
-	fmt.Println(resp)
+
+	fmt.Println(queryInput)
+	var item Item
+	dynamodbattribute.UnmarshalMap(queryInput.Items[0], &item)
+	jsonData, _ := json.Marshal(item)
+	fmt.Println(string(jsonData))
+
+	return events.APIGatewayProxyResponse{
+		Body:       string(jsonData),
+		StatusCode: 200,
+	}, nil
 
 	// ************************************************************************************************************************
+	// query using partition key
 	// result, err := svc.GetItem(&dynamodb.GetItemInput{
 	// 	TableName: aws.String(tableName),
 	// 	Key: map[string]*dynamodb.AttributeValue{
@@ -69,20 +95,8 @@ func main() {
 	// fmt.Println("Firstname: ", item.FirstName)
 	// fmt.Println("Lastname:  ", item.LastName)
 
-	// proj := expression.NamesList(expression.Name("PersonSSN")
-	// keyCondition := expression.Key("PersonSSN").Equal(expression.Value(PersonSSN))
-	// expr, errExpression := expression.NewBuilder().WithKeyCondition(keyCondition).WithProjection(proj).Build()
+}
 
-	// params := &dynamodb.QueryInput{
-	// 	ExpressionAttributeValues: expr.Values(),
-	// 	ExpressionAttributeNames:  expr.Names(),
-	// 	ProjectionExpression:      expr.Projection(),
-	// 	TableName:                 aws.String(tableName),
-	// 	IndexName:                 aws.String("Email-index"),
-	// 	KeyConditionExpression:    expr.KeyCondition(),
-	// },
-	// result, errResults = svc.Query(params)
-	// fmt.Print(errResults)
-	// fmt.Print(result)
-
+func main() {
+	lambda.Start(queryHandler)
 }
